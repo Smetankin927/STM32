@@ -1,5 +1,6 @@
 #######################################################################
 # Makefile for STM32F0 Discovery board projects
+# adapted for bluepill
 
 OUTPATH = build
 PROJECT = $(OUTPATH)/blank
