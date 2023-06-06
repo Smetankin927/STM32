@@ -58,6 +58,8 @@ int main(void)
 			__asm__("nop");
 
 	LL_GPIO_ResetOutputPin(GPIOC, LL_GPIO_PIN_13);	
+		for (int i = 0; i < 1500000; i++)	/* Wait a bit. */
+			__asm__("nop");
 	};
 	
 
