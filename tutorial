@@ -1,0 +1,172 @@
+Флаги компилятороа
+-c -- compile and assemble, do not link
+-S stop after the stage of compilation, do not assemble выходной файл -s?
+-march=name[+extension]
+-mcpu=name[+extension] ..делает специфичным для каждого ядра? или чего-то там
+-mthumb\-marm select between generting code that executes in arm and thumb states we  use -mthumb
+-std выбор стандарта C++ или что-то вроде
+-O0  not optimase
+-Wall -- turn on all the warnings
+-T произвести линковку
+
+target: dependency
+	recept
+main.o: main.c
+	.... main.c -o main.o ----> .....$^ -o $@
+
+
+....
+main.o -- object file (elf)
+....
+
+Секции
+.text include the cocde of the programm
+.data is space in RAM for things like variables, which can change (инициализировано)
+.rodata -- read-only data
+.bss is same as .data but its space is initialized to all 0s at the start of the program. 
+(не инициализировано)
+
+...
+
+StartUp file // boot code
+выполняется до вызова функции main()
+
+‘Boot’ Logic
+
+Finally, we should write some basic ‘boot’ logic to get the chip into a predictable starting state. The very basics of that process is:
+
+    Copy pre-initialized data into the .data RAM section.
+    Set the .bss RAM section to all 0s.
+(#call init function of std. library if we use it)
+    Jump to the ‘main’ method (finally!)------------>.>.>.> это в reset handler
+
+First of all we need to create a vector table или взять его из библиотеки примерно здесь
+(Drivers/CMSIS/Device/ST/STM32F0xx/Source/Templates/gcc/startup_stm32f031x6.s)
+
+	go to the ereference manual and check Interrupt and exception vectors
+#XL-density devices are STM32F101xx and STM32F103xx microcontrollers where the Flash memory density ranges between 768 Kbytes and 1 Mbyte.
+We have not XL-density devices
+We have 68 positions for all supported IRQs + 15 positions(memory locations) for system exeptions at the begining 15 потому что есть 
+Reserved	0x0000_001C -
+		0x0000_002B
+	
+(68+15)*4=332  байта памяти  
+
+Vector table is the collection of addresses
+We want to create a vector of data, but we don`t want to put it in .data as the compiler do as a default
+we shoul use __attribute__((section("name"))) this expression say the compiler that our data must be placed in a special section
+
+............
+Про alias
+	void NMI_handler(void) __atttribute__((alias("Default_handler")));
+	void Default_handler(void)
+	{
+	};
+
+"Default_handler" это alias function имя для "NMI_handler". Когда сработает тригер для NMI вызовется исполнение Default_handler, тюкю под эту функцию резервируется память.
+.........
+Про weak
+эта штука дает нам переопроеделить (override) уже определенную функцию(пустышку) с таким же именем (in main application?)
+
+	void NMI_handler(void) __atttribute__((weak, alias("Default_handler")));
+	void Default_handler(void)
+	{
+	};
+the programmer can iimplement real implementation of handling that expetition. мы позднее можем написать нормальную обработку этого прерывания
+
+.............
+linker script
+
+говорит, как разные секции object файла должны быть (merged) слиты в выходном файле
+Распрпеделяем секции по памяти
+Main ommands:
+	ENTRY
+	MEMORY
+	SECTIONS
+	KEEP
+	ALIGN
+	AT>
+
+ENTRY -- set "entry point address" informat in the header of final elf file generated. Дебагер использует эту информацию для нахождения функции и установления её на выполнениие. Функция не обязательная, но необходима для дебагера
+ENTRY(__symbol_name__) ---->ex---> ENTRY(Reset_handler)
+
+MEMORY allow to describe the different memories present in the targert and their start address and size information. Помогает лилнкеру присваивать адреса слитым секциям и вычислять размер кода, чтоб посмотреть, влезет ли он вообще. Typically one linker script has one memory command
+
+MEMORY
+	{
+		name(attr):ORIGIN=oirgin, LENGHT=len
+		#"name" defines name of memory region
+	}
+ attr:
+R read-only sections
+W readand write sections
+X section, containing exxecutable code
+A allocated secetions
+I initialized sections
+L same as I
+! Invert the sence of any of the following attributes\
+
+We have 20 SRAM and 64K Flash
+
+SECTIONS
+is useed to create different output sections in the final elf
+With this we can say the linker how to merge the input sections to yield an output section
+This command also controokls the order in which different outputs section appear in the elf generated
+By using this command we mention the placement of a section in a memory region/ Ex. we instruct the linker to place the .text section in the FLASH memory region, which is described by the MEMORY command
+
+SECTIONS
+{
+//эта секция включает в себя .text всех входных файлов (main.o led.o startup.o)
+	.text  //можем поставить любое имя
+	{
+	//merge all .isr_vector (isr в startup)
+	//merge all .text and .rodata input files
+
+.text of main.o led.o startup.o
+OR
+*(.text)
+mean "all files"	
+
+
+	}>(vma) AT>(lma) 
+\\ lma -- load memory address
+\\ vma -- virtual memory address
+
+//эта секция включает в себя .data всех входных файлов
+	.data
+	{
+		//merge all .data input files
+	
+	}>(vma) AT>(lma)
+	....
+
+	.bss // this will not get stored into flash, so it has only vma
+	{
+		}>SRAM
+}
+
+
+Мы должны в правильном порядке расположить компоненты в соответствии с диаграммой storage of final executable in code memory
+vector --> .text --> .rodata --> .data
+OTHERWISE THE APPLICATION WILL NOT BE WORK PROPERLY
+
+vma and lma and booting proccess
+https://microcontrollerslab.com/microcontroller-booting-process-reset-sequence/
+http://www.gaw.ru/html.cgi/txt/publ/eqump/gcc/gcc_7.htm
+
+Я еще непр описал, что такое секция COMMON в линкере.
+symbols это просто имена адресов (видео 5 в плейсте 22:00)
+проs location counter тоже не написал
+
+
+
+
+
+
+https://github.com/ARM-software/CMSIS/blob/master/CMSIS/Include/cmsis_gcc.h
+
+тырим у эдгара мэкфайл, прописываем туда свои значения, находим ll библиотеку под себя и header тоже поправить
+https://www.youtube.com/watch?v=B7oKdUvRhQQ
+
+https://github.com/cpq/bare-metal-programming-guide
+https://vivonomicon.com/2018/04/02/bare-metal-stm32-programming-part-1-hello-arm/
